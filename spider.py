@@ -1,29 +1,60 @@
 # coding:utf-8
 import time
-from . import log
+import sys
+import logging
 from threading import Thread
 from .downloader import DownloaderPool
 
-class BaseSpiderPool():
-    def __init__(self, num, task_generator,
-                 urls_storage, items_storage,
-                 name='Spider', log_path=''):
+
+class SpiderPool():
+    def __init__(self, config, task_generator, urls_storage, items_storage,
+                 html_analyzer):
         self.runningFlag = False
         self.task_generator = task_generator()
         self.urls_storage = urls_storage
         self.items_storage = items_storage
-        self.logger = log.generate_logger(name, log_path+'spider.log',
-                                             log.INFO, log.INFO)
+        self.html_analyzer = html_analyzer
+        self.logger = logging.getLogger('SpiderPool')
+
+        num = config['SpiderPool'].getint('thread_num', 4)
         self.spiders = [Thread(target=self._work) for i in range(num)]
+        self.items_count = 0
 
     def _response_handle(self, str_content):
-        urls = self.extract_urls_items(str_content)
-        self.urls_storage(urls)
+        try:
+            urls, items = self.html_analyzer.extract_urls_items(str_content)
+            self._extract_urls_handle(urls)
+            self._extract_items_handle(items)
+        except Exception as e:
+            self.logger.error('Response handle error! {0}'.format(e))
 
-    def extract_urls_items(self, str_content):
-        raise NotImplementedError(
-            '''please implement this method to extract urls and items from str_content,
-            use method self.urls_storage(items) for storage items, and return a set of urls''')
+    def _extract_items_handle(self, items):
+        if items is None:
+            self.logger.debug('extract_items get None')
+            return
+
+        if not hasattr(items, '__iter__'):
+            self.logger.error('Extract items not iterable')
+            return
+
+        self.items_count += len(items)
+        try:
+            self.items_storage(items)
+        except Exception as e:
+            self.logger.error('Fail to put items to items pipe. {0}'.format(e))
+
+    def _extract_urls_handle(self, urls):
+        if urls is None:
+            self.logger.debug('extract_urls get None')
+            return
+
+        try:
+            if not type(urls) is list:
+                urls = list(urls)
+        except Exception as e:
+            self.logger.error('Fail to convert extracted urls to list. {0}'.format(e))
+            return
+        self.urls_storage(urls)
 
     def start(self):
         self.runningFlag = True
@@ -50,3 +81,6 @@ class BaseSpiderPool():
             except Exception as e:
                 self.logger.error(e)
         self.logger.debug('A spider stopped!')
+
+    def get_items_count(self):
+        return self.items_count

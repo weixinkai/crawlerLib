@@ -2,19 +2,22 @@
 import time
 import asyncio
 import aiohttp
-from . import log
+import logging
 from threading import Thread
 
 class DownloaderPool(Thread):
-    def __init__(self, task_generator, response_text_handle, num=10,
-                 log_path=''):
+    def __init__(self, config, task_generator, response_text_handle):
+        '''
+            请求线程池
+            task_generator : URL生成器
+            response_text_handle : 响应处理接口
+        '''
         Thread.__init__(self)
         self.runningFlag = False
+        self.worker_num = config['DownloaderPool'].getint('thread_num', 4)
         self.response_text_handle = response_text_handle
-        self.worker_num = num
         self.task_generator = task_generator()
-        self.logger = log.generate_logger('DownloaderPool', log_path+'downloader.log',
-                                             log.ERROR, log.WARNING)
+        self.logger = logging.getLogger('DownloaderPool')
 
     def stop(self):
         self.runningFlag = False
