@@ -2,7 +2,7 @@
 from redis import StrictRedis
 
 
-class RedisController():
+class RedisController:
     def __init__(self, config):
         self.isGenerateURL = False
 
@@ -11,9 +11,6 @@ class RedisController():
         db = redis_config.getint('db', 0)
         port = redis_config.getint('port', 6379)
         self.url_db = StrictRedis(host=host, port=port, db=db)
-
-        #test redis connection
-        self.url_db.ping()
 
         self.task_url_name = redis_config.get('task_url_name', 'TaskURLs')
         self.seen_url_name = redis_config.get('seen_url_name', 'SeenURLs')
@@ -46,14 +43,7 @@ class RedisController():
             url = self.url_db.lpop(self.task_url_name)
             yield url.decode('utf-8') if url else None
 
-    def get_seen_taks_urls_counts(self):
-        '''return a dict contain keys 'seen' and 'task' '''
-        seen_urls_count = self.url_db.scard(self.seen_url_name)
-        task_urls_count = self.url_db.llen(self.task_url_name)
-
-        return {'seen': seen_urls_count, 'task': task_urls_count}
-
-    def isTaskEmpty(self):
+    def is_task_empty(self):
         if self.url_db.llen(self.task_url_name) > 0:
             return False
         else:
@@ -61,3 +51,15 @@ class RedisController():
 
     def flushdb(self):
         self.url_db.flushdb()
+
+    def check_connect(self):
+        #test redis connection
+        self.url_db.ping()
+
+    @property
+    def seen_count(self):
+        return self.url_db.scard(self.seen_url_name)
+
+    @property
+    def task_count(self):
+        return self.url_db.llen(self.task_url_name)

@@ -21,7 +21,8 @@ def config_init():
     if os.path.isfile(config_name):
         config.read(config_name)
     else:
-        config['DownloaderPool'] = {'thread_num': 4}
+        config['DownloaderPool'] = {'thread_num': 4,
+                                    'freq': 1}
         config['SpiderPool'] = {'thread_num': 4}
         config['Redis'] = {'host' : '127.0.0.1',
                            'port' : 6379,
@@ -33,7 +34,7 @@ def config_init():
     return config
 
 
-class CrawlerCoordinator():
+class CrawlerCoordinator:
     def __init__(self, html_analyzer, items_pipe):
         '''爬虫框架调度器'''
         self.runningFlag = False
@@ -50,8 +51,9 @@ class CrawlerCoordinator():
         try:
             #检查redis是否连接得上
             self.urls_manager = RedisController(config)
+            self.urls_manager.check_connect()
         except Exception as e:
-            self.logger.error('Redis error! ' + str(e))
+            self.logger.error('Redis connect error! ' + str(e))
             sys.exit(0)
 
         #响应队列
@@ -63,14 +65,14 @@ class CrawlerCoordinator():
             html_analyzer=html_analyzer,
             task_generator=self._response_text_generator,
             urls_storage=self.urls_manager.storage_urls,
-            items_storage=items_pipe.put_items,
+            items_storage=items_pipe.put_items
         )
 
         #请求池
         self.downloader_pool = DownloaderPool(
             config=config,
             task_generator=self.urls_manager.url_generator,
-            response_text_handle=self._put_response_text,
+            response_text_handle=self._put_response_text
         )
 
         #响应计数
@@ -116,10 +118,8 @@ class CrawlerCoordinator():
         self.downloader_pool.join()
         self.logger.info('DownloaderPool stopped!')
 
-        self.logger.info('Wait for response handle...')
-        while self.response_text_queue: pass
-        self.logger.info('Response handle finish!')
-
+        #先停止下载池保证不会再有新response
+        self.runningFlag = False
         self.spider_pool.stop()
         self.spider_pool.join()
         self.logger.info('SpiderPool stopped!')
@@ -169,12 +169,11 @@ class CrawlerCoordinator():
 
     def info(self):
         '''输出统计信息'''
-        counts = self.urls_manager.get_seen_taks_urls_counts()
-        items_count = self.spider_pool.get_items_count()
         self.logger.info('========Crawler information========')
         self.logger.info('Seen urls: {0}, Task urls: {1}'
-                         .format(counts['seen'], counts['task']))
+                         .format(self.urls_manager.seen_count, 
+                                self.urls_manager.task_count))
         self.logger.info('Get responses: {0}, Task responses: {1}'
                          .format(self.response_count, len(self.response_text_queue)))
-        self.logger.info('Extract items: {0}'.format(items_count))
+        self.logger.info('Extract items: {0}'.format(self.spider_pool.items_count))
         self.logger.info('-----------------------------------')

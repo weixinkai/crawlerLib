@@ -2,13 +2,15 @@
 import time
 import sys
 import logging
+from multiprocessing.dummy import Pool
 from threading import Thread
 from .downloader import DownloaderPool
 
 
-class SpiderPool():
+class SpiderPool(Thread):
     def __init__(self, config, task_generator, urls_storage, items_storage,
                  html_analyzer):
+        Thread.__init__(self)
         self.runningFlag = False
         self.task_generator = task_generator()
         self.urls_storage = urls_storage
@@ -16,9 +18,8 @@ class SpiderPool():
         self.html_analyzer = html_analyzer
         self.logger = logging.getLogger('SpiderPool')
 
-        num = config['SpiderPool'].getint('thread_num', 4)
-        self.spiders = [Thread(target=self._work) for i in range(num)]
-        self.items_count = 0
+        self.worker_num = config['SpiderPool'].getint('thread_num', 4)
+        self._items_count = 0
 
     def _response_handle(self, str_content):
         try:
@@ -37,7 +38,7 @@ class SpiderPool():
             self.logger.error('Extract items not iterable')
             return
 
-        self.items_count += len(items)
+        self._items_count += len(items)
         try:
             self.items_storage(items)
         except Exception as e:
@@ -47,7 +48,6 @@ class SpiderPool():
         if urls is None:
             self.logger.debug('extract_urls get None')
             return
-
         try:
             if not type(urls) is list:
                 urls = list(urls)
@@ -56,31 +56,21 @@ class SpiderPool():
             return
         self.urls_storage(urls)
 
-    def start(self):
-        self.runningFlag = True
-        for spider in self.spiders:
-            spider.start()
-
     def stop(self):
         self.runningFlag = False
 
-    def join(self):
-        for spider in self.spiders:
-            spider.join()
+    def run(self):
+        self.runningFlag = True
+        with Pool(processes=self.worker_num) as pool:
+            while self.runningFlag:
+                for text in self.task_generator:
+                    if not text:
+                        time.sleep(1)
+                        continue
+                    pool.apply_async(self._response_handle, (text,))
+            pool.close()
+            pool.join()
 
-    def _work(self):
-        while self.runningFlag:
-            try:
-                text = next(self.task_generator)
-                if not text:
-                    time.sleep(1)
-                    continue
-                self._response_handle(text)
-            except StopIteration:
-                break
-            except Exception as e:
-                self.logger.error(e)
-        self.logger.debug('A spider stopped!')
-
-    def get_items_count(self):
-        return self.items_count
+    @property
+    def items_count(self):
+        return self._items_count
