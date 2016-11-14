@@ -15,12 +15,6 @@ class RedisController:
         self.task_url_name = redis_config.get('task_url_name', 'TaskURLs')
         self.seen_url_name = redis_config.get('seen_url_name', 'SeenURLs')
 
-    def start_url_generator(self):
-        self.isGenerateURL = True
-
-    def stop_url_generator(self):
-        self.isGenerateURL = False
-
     def storage_urls(self, urls):
         '''storage urls extracted by spider'''
         if not urls: return
@@ -37,11 +31,10 @@ class RedisController:
         pipe.rpush(self.task_url_name, *new_urls)
         pipe.execute()
 
-    def url_generator(self):
-        '''get url from url db for downloader'''
-        while self.isGenerateURL:
-            url = self.url_db.lpop(self.task_url_name)
-            yield url.decode('utf-8') if url else None
+    def get_url(self):
+        '''get url from url db'''
+        url = self.url_db.lpop(self.task_url_name)
+        return url.decode('utf-8') if url else None
 
     def is_task_empty(self):
         if self.url_db.llen(self.task_url_name) > 0:

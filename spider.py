@@ -7,18 +7,16 @@ from threading import Thread
 from .downloader import DownloaderPool
 
 
-class SpiderPool(Thread):
-    def __init__(self, config, task_generator, urls_storage, items_storage,
+class SpiderPool():
+    def __init__(self, config, urls_storage, items_storage,
                  html_analyzer):
-        Thread.__init__(self)
-        self.runningFlag = False
-        self.task_generator = task_generator()
+        worker_num = config['SpiderPool'].getint('thread_num', 4)
+        self.pool = Pool(processes=worker_num)
         self.urls_storage = urls_storage
         self.items_storage = items_storage
         self.html_analyzer = html_analyzer
         self.logger = logging.getLogger('SpiderPool')
 
-        self.worker_num = config['SpiderPool'].getint('thread_num', 4)
         self._items_count = 0
 
     def _response_handle(self, str_content):
@@ -57,19 +55,11 @@ class SpiderPool(Thread):
         self.urls_storage(urls)
 
     def stop(self):
-        self.runningFlag = False
+        self.pool.close()
+        self.pool.join()
 
-    def run(self):
-        self.runningFlag = True
-        with Pool(processes=self.worker_num) as pool:
-            while self.runningFlag:
-                for text in self.task_generator:
-                    if not text:
-                        time.sleep(1)
-                        continue
-                    pool.apply_async(self._response_handle, (text,))
-            pool.close()
-            pool.join()
+    def add_task(self, text):
+        self.pool.apply_async(self._response_handle, (text,))
 
     @property
     def items_count(self):
