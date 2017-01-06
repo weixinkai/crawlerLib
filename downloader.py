@@ -19,6 +19,7 @@ class DownloaderPool(Thread):
         self.response_text_handle = response_text_handle
         self.get_url = get_url
         self.logger = logging.getLogger('DownloaderPool')
+        self.session = None
 
     def stop(self):
         self.runningFlag = False
@@ -30,27 +31,30 @@ class DownloaderPool(Thread):
         asyncio.set_event_loop(loop)
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.80 Safari/537.36'}
         with aiohttp.ClientSession(loop=loop, headers=headers) as session:
+            self.session = session
             tasks = [
-                asyncio.ensure_future(self.request(session))
+                asyncio.ensure_future(self.work())
                 for i in range(self.worker_num)
             ]
             loop.run_until_complete(asyncio.wait(tasks))
         loop.close()
 
-    async def request(self, session):
-        '''async url request'''
+    async def work(self):
         while self.runningFlag:
             try:
                 url = self.get_url()
                 if not url:
                     await asyncio.sleep(0.5)
                     continue
-                async with session.get(url) as response:
-                    if response.status != 200:
-                        raise Exception('Wrong Response status:{}'.format(response.status))
-                    self.response_text_handle(await response.text())
+                await self.request(url)
             except Exception as e:
                 self.logger.error('\n\tURL:"{0}"\n\tError:{1}'.format(url, e))
             finally:
                 await asyncio.sleep(self.freq)
-        self.logger.debug('A worker stopping!')
+
+    async def request(self, url):
+        '''async url request'''
+        async with self.session.get(url) as response:
+            if response.status != 200:
+                raise Exception('Wrong Response status:{}'.format(response.status))
+            self.response_text_handle(await response.text())

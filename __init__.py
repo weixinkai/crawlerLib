@@ -35,7 +35,7 @@ def config_init():
 
 
 class CrawlerCoordinator:
-    def __init__(self, html_analyzer, items_pipe):
+    def __init__(self, analyzer_class, put_items_api):
         '''爬虫框架调度器'''
         
         #日志输出初始化
@@ -44,9 +44,6 @@ class CrawlerCoordinator:
 
         #配置初始化
         config = config_init()
-
-        #检查接口是否齐全
-        self._check_api(html_analyzer, items_pipe)
         try:
             #检查redis是否连接得上
             self.urls_manager = RedisController(config)
@@ -58,9 +55,9 @@ class CrawlerCoordinator:
         #网页分析池
         self.spider_pool = SpiderPool(
             config=config,
-            html_analyzer=html_analyzer,
+            analyzer_class=analyzer_class,
             urls_storage=self.urls_manager.storage_urls,
-            items_storage=items_pipe.put_items
+            items_storage=put_items_api
         )
 
         #请求池
@@ -75,19 +72,6 @@ class CrawlerCoordinator:
 
         #定时输出统计信息
         self.info_timer = None
-
-    def _check_api(self, html_analyzer, items_pipe):
-        '''检查插件接口是否齐全'''
-        flag = False
-        if not hasattr(html_analyzer, 'extract_urls_items'):
-            self.logger.error(NotImplemented('Not found func extract_urls_items return [urls, items] in analyzer'))
-            flag = True
-
-        if not hasattr(items_pipe, 'put_items'):
-            self.logger.error(NotImplementedError('Please implement method put_items(items) in items_pip for sending items to pipe'))
-            flag=True
-        if flag:
-            sys.exit(0)
 
     def start(self):
         '''启动爬虫框架'''
